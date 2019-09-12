@@ -1,4 +1,5 @@
-#!/bin/bash node
+#!/usr/bin/env node
+
 const StellarSdk = require("stellar-sdk");
 const Anchor = require("./anchor");
 const TransactionMiddleware = require("./transaction-middleware");
