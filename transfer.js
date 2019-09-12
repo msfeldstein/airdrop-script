@@ -1,17 +1,14 @@
 #!/bin/bash node
 const StellarSdk = require("stellar-sdk");
-const waitKey = require("./wait-key");
 const Anchor = require("./anchor");
 const TransactionMiddleware = require("./transaction-middleware");
 const chalk = require("chalk");
 const EventSource = require("eventsource");
 const fetch = require("node-fetch");
 const server = new StellarSdk.Server("https://horizon-testnet.stellar.org");
-const keys = {};
+
 const anchor = new Anchor();
-const { addOperation, submitTransaction } = TransactionMiddleware(msg =>
-  console.log(chalk.hex("#729fcf")(msg))
-);
+const { addOperation, submitTransaction } = TransactionMiddleware(walletLog);
 
 const main = async () => {
   console.log(`transfer.js: Exhibit transfer of non-native assets to various accounts:
