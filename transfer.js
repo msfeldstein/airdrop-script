@@ -62,11 +62,11 @@ const createAccount = async ({ isFunded, hasTrustline }) => {
 };
 
 function walletLog(msg) {
-	console.log(chalk.hex("#729fcf")(msg));
+	console.log(chalk.hex("#729fcf")("[Wallet] " + msg));
 }
 
 async function logBalance(msg, accountId) {
-	console.log(">>> " + msg);
+	console.log(">>> Wallet Account " + msg);
 	let account = await server.loadAccount(accountId);
 	const balance = account.balances.find(b => b.asset_code === "ABC");
 	if (balance) {
@@ -81,12 +81,12 @@ async function logBalance(msg, accountId) {
 }
 
 async function accountWithTrustline() {
-	walletLog("> Creating account with a trustline");
+	walletLog("Creating account with a trustline");
 	const pair = await createAccount({
 		isFunded: true,
 		hasTrustline: true
 	});
-	walletLog("> Requesting payment from anchor");
+	walletLog("Requesting payment from anchor");
 	let accountId = pair.publicKey();
 	await logBalance("Before Request", accountId);
 	await anchor.request(accountId, "100");
@@ -95,7 +95,9 @@ async function accountWithTrustline() {
 
 async function accountWithFundsButNoTrustline() {
 	const amount = "100";
-	walletLog("> Creating a funded account without a trustline");
+	walletLog(
+		"Creating a funded account without a trustline to the requested asset"
+	);
 	const pair = await createAccount({
 		isFunded: true,
 		hasTrustline: false
@@ -107,9 +109,9 @@ async function accountWithFundsButNoTrustline() {
 		await waitForClaimableAccount(pair)
 	]);
 	const accountToClaim = values[1];
-	walletLog("> Found claimable account: " + accountToClaim);
+	walletLog("Found claimable account: " + accountToClaim);
 	await claimAccount(pair, accountToClaim, amount);
-	await logBalance("After Request", accountId);
+	await logBalance("After Merge", accountId);
 	console.log(
 		`Issuer account: https://stellar.expert/explorer/testnet/account/${
 			anchor.asset().issuer
@@ -149,7 +151,7 @@ async function claimAccount(mainAccountPair, claimableAccountId, amount) {
 	const asset = anchor.asset();
 	const mainPK = mainAccountPair.publicKey();
 	walletLog(
-		"> Merge the temporary account created by the anchor for me into my main account"
+		"Merge the temporary account created by the anchor for me into my main account"
 	);
 	const claimableAccount = await server.loadAccount(claimableAccountId);
 	const { p90_accepted_fee: fee } = await server.feeStats();
@@ -163,13 +165,13 @@ async function claimAccount(mainAccountPair, claimableAccountId, amount) {
 	try {
 		accountToClaim = await server.loadAccount(mainPK);
 		walletLog(
-			"> The main account exists, we need to check if it needs a trustline or already has one."
+			"The main account exists, we need to check if it needs a trustline or already has one."
 		);
 		needsTrustline = !accountToClaim.balances.find(b => b.asset_code === "ABC");
 	} catch (e) {
 		console.log(e);
 		walletLog(
-			"> The main account doesn't exist yet.  We'll need to create it with the lumens in the claimable account"
+			"The main account doesn't exist yet.  We'll need to create it with the lumens in the claimable account"
 		);
 		addOperation(mergeTxBuilder, "createAccount", {
 			destination: mainPK,
@@ -178,7 +180,7 @@ async function claimAccount(mainAccountPair, claimableAccountId, amount) {
 	}
 	if (!needsTrustline) {
 		walletLog(
-			"> The main account has a trustline. We need to ensure it has enough lumens for one offer so we give it 0.5xlm"
+			"The main account has a trustline. We need to ensure it has enough lumens for one offer so we give it 0.5xlm"
 		);
 		console.error(">>> What is the 'one offer' for???");
 		addOperation(mergeTxBuilder, "payment", {
@@ -187,31 +189,53 @@ async function claimAccount(mainAccountPair, claimableAccountId, amount) {
 			source: claimableAccountId
 		});
 	} else {
-		walletLog(
-			"> The main account needs a trustline. We need to ensure it has enough lumens for one offer and one trustline so we give it 0.5xlm"
+		addOperation(
+			mergeTxBuilder,
+			"payment",
+			{
+				asset: StellarSdk.Asset.native(),
+				amount: "1.0",
+				source: claimableAccountId,
+				destination: mainPK
+			},
+			"The main account needs a trustline. We need to ensure it has enough lumens for one offer and one trustline so we give it 0.5xlm"
 		);
-		addOperation(mergeTxBuilder, "payment", {
-			asset: StellarSdk.Asset.native(),
-			amount: "1.0",
-			source: claimableAccountId,
-			destination: mainPK
-		});
-		addOperation(mergeTxBuilder, "changeTrust", {
-			asset,
-			source: mainPK
-		});
+		addOperation(
+			mergeTxBuilder,
+			"changeTrust",
+			{
+				asset,
+				source: mainPK
+			},
+			"Add the trustline to the main account to enable the following payment of the asset"
+		);
 	}
 
-	addOperation(mergeTxBuilder, "payment", {
-		asset,
-		destination: mainPK,
-		amount
-	});
-	addOperation(mergeTxBuilder, "setOptions", {
-		signer: { weight: 0, ed25519PublicKey: mainPK }
-	});
-	addOperation(mergeTxBuilder, "changeTrust", { asset, limit: "0" });
-	addOperation(mergeTxBuilder, "accountMerge", { destination: mainPK });
+	addOperation(
+		mergeTxBuilder,
+		"payment",
+		{
+			asset,
+			destination: mainPK,
+			amount
+		},
+		"Move the actual assets from the intermediate account into the main account"
+	);
+	// addOperation(mergeTxBuilder, "setOptions", {
+	// 	signer: { weight: 0, ed25519PublicKey: mainPK }
+	// }, "Remove the main account as a signer");
+	addOperation(
+		mergeTxBuilder,
+		"changeTrust",
+		{ asset, limit: "0" },
+		"Remove the trustline of the asset from the intermediate account so it can be merged to the main account"
+	);
+	addOperation(
+		mergeTxBuilder,
+		"accountMerge",
+		{ destination: mainPK },
+		"Merge the intermediate account into the main account to absorb any leftover lumens"
+	);
 	const mergeTx = mergeTxBuilder.setTimeout(100).build();
 	mergeTx.sign(mainAccountPair);
 	await submitTransaction(mergeTx);
