@@ -1,7 +1,12 @@
 const StellarSdk = require("stellar-sdk");
 const chalk = require("chalk");
 const waitKey = require("./wait-key");
+const TransactionMiddleware = require("./transaction-middleware");
 const server = new StellarSdk.Server("https://horizon-testnet.stellar.org");
+
+const { addOperation, submitTransaction } = TransactionMiddleware(msg =>
+	console.log(chalk.green(msg))
+);
 
 class Anchor {
 	constructor() {}
@@ -13,94 +18,59 @@ class Anchor {
 	}
 
 	async request(destinationAccountId, amount) {
-		const destinationAccount = await server.loadAccount(destinationAccountId);
-		const trustline = !!destinationAccount.balances.find(
-			balance =>
-				balance.asset_code === Anchor.ASSET_CODE &&
-				balance.asset_issuer === this.pair.publicKey()
-		);
-		console.log("REQUEST");
-		if (trustline) {
-			this.log("There is already a trustline, we can just send it");
-			await this.sendDirect(destinationAccount.accountId(), amount);
-		} else {
-			this.log(
-				"There is an account but no trustline.  We need to create a temporary account for them to claim when they create their account."
-			);
-			await this.sendWithIntermediate(destinationAccount.accountId(), amount);
-		}
-	}
-
-	async sendWithIntermediate(destinationAccountId, amount) {
 		const intermediatePair = StellarSdk.Keypair.random();
 		const intermediateKey = intermediatePair.publicKey();
 		this.log("> Generated intermediate account " + intermediateKey);
 		const asset = this.asset();
 		const issuerAccount = await server.loadAccount(this.accountId());
 		const { p90_accepted_fee: fee } = await server.feeStats();
-		const tx = new StellarSdk.TransactionBuilder(issuerAccount, {
+		const txBuilder = new StellarSdk.TransactionBuilder(issuerAccount, {
 			fee,
 			networkPassphrase: StellarSdk.Networks.TESTNET
-		})
-			// Create the intermediate account with some lumens to handle the trustline and reserve
-			.addOperation(
-				StellarSdk.Operation.createAccount({
-					destination: intermediateKey,
-					startingBalance: "2.00006" // 2.00006 because.... ?
-				})
-			)
-			// Add a trustline to it
-			.addOperation(
-				StellarSdk.Operation.changeTrust({
-					asset,
-					amount,
-					source: intermediateKey
-				})
-			)
-			// Send the actual assets (you may want to withhold the cost of setting up the account)
-			.addOperation(
-				StellarSdk.Operation.payment({
-					destination: intermediateKey,
-					asset,
-					amount
-				})
-			)
-			// Replace the intermediate accounts signers from the anchor to the client
-			.addOperation(
-				StellarSdk.Operation.setOptions({
-					source: intermediateKey,
-					masterWeight: 0,
-					signer: {
-						ed25519PublicKey: destinationAccountId,
-						weight: 1
-					}
-				})
-			)
-			.setTimeout(100)
-			.build();
+		});
+		addOperation(txBuilder, "createAccount", {
+			destination: intermediateKey,
+			startingBalance: "4" // 2.00006 because.... ?
+		});
+		addOperation(txBuilder, "changeTrust", {
+			asset,
+			amount,
+			source: intermediateKey
+		});
+		addOperation(txBuilder, "payment", {
+			destination: intermediateKey,
+			asset,
+			amount
+		});
+		addOperation(txBuilder, "setOptions", {
+			source: intermediateKey,
+			masterWeight: 0,
+			signer: {
+				ed25519PublicKey: destinationAccountId,
+				weight: 1
+			}
+		});
+		const tx = txBuilder.setTimeout(100).build();
 		tx.sign(this.pair);
 		tx.sign(intermediatePair);
-		await server.submitTransaction(tx);
+		await submitTransaction(tx);
 	}
 
 	async sendDirect(destinationAccountId, amount) {
 		const issuerAccount = await server.loadAccount(this.accountId());
 		const { p90_accepted_fee: fee } = await server.feeStats();
-		const tx = new StellarSdk.TransactionBuilder(issuerAccount, {
+		const txBuilder = new StellarSdk.TransactionBuilder(issuerAccount, {
 			fee,
 			networkPassphrase: StellarSdk.Networks.TESTNET
-		})
-			.addOperation(
-				StellarSdk.Operation.payment({
-					amount: String(amount),
-					destination: destinationAccountId,
-					asset: this.asset()
-				})
-			)
-			.setTimeout(100)
-			.build();
+		});
+		addOperation(txBuilder, "payment", {
+			amount: String(amount),
+			destination: destinationAccountId,
+			asset: this.asset()
+		});
+		const tx = txBuilder.setTimeout(100).build();
 		tx.sign(this.pair);
-		await server.submitTransaction(tx);
+		await submitTransaction(tx);
 	}
 
 	log(msg) {

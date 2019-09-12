@@ -2,13 +2,16 @@
 const StellarSdk = require("stellar-sdk");
 const waitKey = require("./wait-key");
 const Anchor = require("./anchor");
+const TransactionMiddleware = require("./transaction-middleware");
 const chalk = require("chalk");
 const EventSource = require("eventsource");
 const fetch = require("node-fetch");
 const server = new StellarSdk.Server("https://horizon-testnet.stellar.org");
-
 const keys = {};
 const anchor = new Anchor();
+const { addOperation, submitTransaction } = TransactionMiddleware(msg =>
+	console.log(chalk.hex("#729fcf")(msg))
+);
 
 const main = async () => {
 	console.log(`transfer.js: Exhibit transfer of non-native assets to various accounts:
@@ -30,32 +33,6 @@ const main = async () => {
 	await waitKey("[account with funds but no trustline]");
 	await accountWithFundsButNoTrustline();
 };
-
-// Add a layer around transactions so we can log them in a nice way
-let ops = [];
-const addOperation = (txBuilder, opName, params) => {
-	ops.push({ name: opName, params });
-	txBuilder.addOperation(StellarSdk.Operation[opName](params));
-};
-
-async function submitTransaction(tx) {
-	try {
-		walletLog("Sending transaction with ops: ");
-		ops.forEach(op => {
-			walletLog("  " + op.name);
-			Object.keys(op.params).forEach(key => {
-				walletLog("    " + key + ": " + JSON.stringify(op.params[key]));
-			});
-		});
-
-		ops = [];
-		await server.submitTransaction(tx);
-		walletLog("Transaaction succeded");
-	} catch (e) {
-		console.error("Error submitting transaction");
-		console.error(e.response.data.extras.result_codes);
-	}
-}
 
 const createAccount = async ({ isFunded, hasTrustline }) => {
 	const pair = StellarSdk.Keypair.random();
@@ -133,6 +110,17 @@ async function accountWithFundsButNoTrustline() {
 	walletLog("> Found claimable account: " + accountToClaim);
 	await claimAccount(pair, accountToClaim, amount);
 	await logBalance("After Request", accountId);
+	console.log(
+		`Issuer account: https://stellar.expert/explorer/testnet/account/${
+			anchor.asset().issuer
+		}`
+	);
+	console.log(
+		`Claimed account: https://stellar.expert/explorer/testnet/account/${accountToClaim}`
+	);
+	console.log(
+		`Wallet account https://stellar.expert/explorer/testnet/account/${accountId}`
+	);
 }
 
 async function waitForClaimableAccount(pair) {
@@ -222,7 +210,7 @@ async function claimAccount(mainAccountPair, claimableAccountId, amount) {
 	addOperation(mergeTxBuilder, "setOptions", {
 		signer: { weight: 0, ed25519PublicKey: mainPK }
 	});
-	addOperation(mergeTxBuilder, "changeTrust", { asset, amount: "0" });
+	addOperation(mergeTxBuilder, "changeTrust", { asset, limit: "0" });
 	addOperation(mergeTxBuilder, "accountMerge", { destination: mainPK });
 	const mergeTx = mergeTxBuilder.setTimeout(100).build();
 	mergeTx.sign(mainAccountPair);
