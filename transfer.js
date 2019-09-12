@@ -19,13 +19,8 @@ const main = async () => {
   
   We will create an issuer account, and exhibit sending the ABC asset to these account types`);
 
-  console.log(chalk.green("Green messages come from the anchor"));
-  console.log(chalk.hex("#729fcf")("Blue messages come from the wallet"));
-
   await anchor.init();
 
-  // await waitKey("[account with a trustline]");
-  // await accountWithTrustline();
   await accountWithFundsButNoTrustline();
 };
 
@@ -125,9 +120,10 @@ async function waitForClaimableAccount(pair) {
     const signer = pair.publicKey();
     const accountsForSignerEndpoint = `https://horizon-testnet.stellar.org/accounts?signer=${signer}`;
     // Eventually this will use the js-sdk when accounts-for-signer endpoint is enabled
-    console.log(accountsForSignerEndpoint);
     const eventSource = new EventSource(accountsForSignerEndpoint);
-    walletLog("Listening for accounts where i am a signer");
+    walletLog(
+      "Listening for accounts where i am a signer via Horizon's accounts-for-signer endpoint"
+    );
     const refreshIntervalId = setInterval(async () => {
       const resp = await fetch(accountsForSignerEndpoint);
       const json = await resp.json();
