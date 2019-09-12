@@ -1,7 +1,7 @@
 Implementation of a proposed protocol for airdropping stellar assets to accounts that may not have trustlines or even exist yet.
 
 ```
-➜  airdrop-script git:(master) ✗ node transfer.js
+➜  airdrop-script git:(master) ✗ npx msfeldstein-airdrop-script
 transfer.js: Exhibit transfer of non-native assets to various accounts:
   - Account with a trustline (trivial)
   - Account with funds but no trustline
@@ -9,8 +9,6 @@ transfer.js: Exhibit transfer of non-native assets to various accounts:
   - User with no account
 
   We will create an issuer account, and exhibit sending the ABC asset to these account types
-Green messages come from the anchor
-Blue messages come from the wallet
 [Anchor] Creating Issuer account GDPFDWQD3E5WTQAFFTNK6F5E4UXUDCKVXSWEXI3AWIV4N5BSUBGINXVB
 [Wallet] Creating a funded account without a trustline to the requested asset
 [Wallet] Generated account GD6FFYNHC5SGC66R7MN56CSRPRUY7K2ZTOPPBJB3LCQVU6MD3A4LY5K5
