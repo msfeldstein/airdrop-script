@@ -12,7 +12,11 @@ const anchor = new Anchor();
 const { addOperation, submitTransaction } = TransactionMiddleware(walletLog);
 
 const main = async () => {
-  console.log(`transfer.js: Exhibit transfer of non-native assets to various accounts:
+  console.log(`transfer.js: Exhibit transfer of non-native assets to any user, no matter the state of their account.
+  This works by the anchor creating an intermediate account to hold the assets, and enough lumens to create the receiver account and add a trustline.  It then adds the receiving address as a signer so the user can sign for and claim all the assets in the intermediate account.
+  After requesting assets from the anchor, the wallet starts listening for new accounts that it can sign for.  When it finds one it will send all the assets into its main account, and merge the intermediate account to claim any unused lumens.
+
+  Works for:
   - Account with a trustline (trivial)
   - Account with funds but no trustline
   - Account with no funds and no trustline
